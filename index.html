@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQTT Light Control</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>MQTT Light Control</h1>
+    
+    <div id="lightIndicator" class="light-bulb">
+      <div class="light-glow"></div>
+      <svg class="light-icon" id="bulbIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="#64748b"></path>
+      </svg>
+    </div>
+    
+    <div class="button-container">
+      <button id="activateButton" disabled>Turn On</button>
+      <button id="deactivateButton" disabled>Turn Off</button>
+    </div>
+    
+    <div id="connectionStatus" class="status-error">
+      <div class="status-icon">🔴</div>
+      <div>Status: Connecting to MQTT broker...</div>
+    </div>
+
+    <div class="broker-info">
+      Connected to <a href="https://broker.emqx.io" target="_blank">broker.emqx.io</a> | Topic: /student_group/light_control
+    </div>
+    
+    <div class="light-status" id="lightStatus">💡 Light is OFF</div>
+    <button onclick="sendCommand('ON')">Turn ON</button>
+    <button onclick="sendCommand('OFF')">Turn OFF</button>
+  </div>
+
+  <script>
+    const BROKER_HOST = "broker.emqx.io";
+    const BROKER_PORT = 8083;
+    const CLIENT_ID = "web_client_" + Math.random().toString(16).substr(2, 8);
+    const CONTROL_TOPIC = "/student_group/light_control";
+
+    const elements = {
+      bulb: document.getElementById("lightIndicator"),
+      icon: document.getElementById("bulbIcon"),
+      status: document.getElementById("connectionStatus"),
+      activateBtn: document.getElementById("activateButton"),
+      deactivateBtn: document.getElementById("deactivateButton"),
+      statusIcon: document.querySelector(".status-icon")
+    };
+
+    const bulbIcons = {
+      active: `<circle cx="12" cy="12" r="5" stroke="#b45309" fill="#fef08a"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y1="4.22"></line>`,
+      inactive: `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="#64748b"></path>`
+    };
+
+    const mqttClient = mqtt.connect(`ws://${BROKER_HOST}:${BROKER_PORT}/mqtt`, {
+      clientId: CLIENT_ID,
+    });
+
+    mqttClient.on("connect", handleConnection);
+    mqttClient.on("error", handleError);
+    mqttClient.on("disconnect", handleDisconnect);
+
+    function handleConnection() {
+      displayStatus("Connected to MQTT broker", "active");
+      toggleButtons(true);
+    }
+
+    function handleError(error) {
+      displayStatus("Connection error", "error");
+      toggleButtons(false);
+      console.error("Connection error:", error);
+    }
+
+    function handleDisconnect() {
+      displayStatus("Disconnected from MQTT broker", "error");
+      toggleButtons(false);
+    }
+
+    function displayStatus(message, state) {
+      elements.status.innerHTML = `<div class="status-icon">${getStatusSymbol(state)}</div><div>Status: ${message}</div>`;
+      elements.status.className = `status-${state}`;
+      
+      if (state === "error" || (state === "active" && !elements.bulb.classList.contains("active"))) {
+        elements.icon.innerHTML = bulbIcons.inactive;
+      }
+    }
+
+    function getStatusSymbol(state) {
+      const symbols = {
+        active: "🟢",
+        error: "🔴",
+        processing: "🟡",
+        default: "⚪"
+      };
+      return symbols[state] || symbols.default;
+    }
+
+    function toggleButtons(enable) {
+      elements.activateBtn.disabled = !enable;
+      elements.deactivateBtn.disabled = !enable;
+    }
+
+    function transmitCommand(command) {
+      displayStatus("Sending command...", "processing");
+      mqttClient.publish(CONTROL_TOPIC, command, {}, (error) => {
+        if (error) {
+          displayStatus("Failed to send command", "error");
+        } else {
+          displayStatus(`Light is ${command === "ON" ? "ON" : "OFF"}`, "active");
+          if (command === "ON") {
+            elements.bulb.classList.add("active");
+            elements.icon.innerHTML = bulbIcons.active;
+            elements.activateBtn.disabled = true;
+            elements.deactivateBtn.disabled = false;
+          } else {
+            elements.bulb.classList.remove("active");
+            elements.icon.innerHTML = bulbIcons.inactive;
+            elements.activateBtn.disabled = false;
+            elements.deactivateBtn.disabled = true;
+          }
+        }
+      });
+    }
+
+    elements.activateBtn.addEventListener("click", () => transmitCommand("ON"));
+    elements.deactivateBtn.addEventListener("click", () => transmitCommand("OFF"));
+
+    function sendCommand(command) {
+      fetch(`/send_command?command=${command}`);
+    }
+  </script>
+</body>
+</html>
